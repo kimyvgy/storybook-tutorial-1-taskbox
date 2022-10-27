@@ -1,0 +1,61 @@
+name: storybook
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 16.x
+    - uses: actions/cache@v3
+      env:
+        cache-name: node_modules-16x
+      with:
+        path: node_modules
+        key: ${{ runner.os }}-build-${{ env.cache-name }}
+    - run: yarn install --frozen-lockfile
+    - run: yarn build-storybook
+    - run: |
+        npx concurrently -k -s first -n "SB,TEST" -c "magenta,blue" \
+          "npx http-server storybook-static --port 6006 --silent" \
+          "npx wait-on tcp:6006 && yarn test-storybook"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: storybook-static
+        path: ./storybook-static
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/download-artifact@v3
+      with:
+        name: storybook-static
+        path: ./storybook-static
+    - name: ⎔ Setup Pages
+      uses: actions/configure-pages@v2
+    - name: ⎔ Upload artifact
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: './storybook-static'
+    - name: 🚀 Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v1
